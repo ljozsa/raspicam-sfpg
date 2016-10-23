@@ -1,0 +1,47 @@
+---
+- name: Install necessary packages
+  apt:
+    update_cache: yes
+    cache_valid_time: 86400
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - apache2
+    - libapache2-mod-php5
+  when: "{{ sfpg_local }} == True"
+
+- name: ensure /dev/sda1 is mounted at /var/www
+  mount:
+    name: /var/www
+    src: /dev/sda1
+    state: mounted
+    fstype: ext4
+    opts: defaults,noatime
+    dump: 0
+    passno: 2
+  when: 
+    - "{{ sfpg_local }} == True"
+    - "{{ running_on_raspi }} == True"
+
+- name: create album dirs 
+  file: 
+    path: "{{ raspicam_default_dir }}/{{ raspicam_name }}"
+    state: directory 
+    owner: www-data 
+    group: www-data 
+  when: "{{ sfpg_local }} == True"
+
+- name: copy SFPG index.php into place (local Apache)
+  copy:
+    src: index.php
+    dest: "{{ raspicam_default_dir }}"
+    owner: www-data
+    group: www-data
+  when: "{{ sfpg_local }} == True"
+
+- name: copy SFPG index.php into place (remote server)
+  copy:
+    src: index.php
+    dest: "{{ raspicam_offsite_image_copy_ssh_login }}@{{ raspicam_offsite_image_copy_server_name }}:{{ raspicam_offsite_image_copy_document_root }}/"
+  when: "{{ sfpg_local }} == False"
+
