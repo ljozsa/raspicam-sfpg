@@ -1,5 +1,5 @@
 ---
-- name: Install necessary packages
+- name: Install necessary packages (apt)
   apt:
     update_cache: yes
     cache_valid_time: 86400
@@ -8,7 +8,63 @@
   with_items:
     - apache2
     - libapache2-mod-php5
-  when: "{{ sfpg_local }} == True"
+  when: ansible_distribution == "Debian"
+
+- name: Install necessary packages (yum)
+  yum:
+    update_cache: yes
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - httpd
+    - php
+  when: ansible_distribution == "CentOS"
+
+- name: Configure Apache - default config (Debian)
+  template:
+    src: default.conf.tmpl
+    dest: /etc/apache2/conf-available/default.conf
+  when: ansible_distribution == "Debian"
+
+- name: Enable Apache config (Debian)
+  command: a2enconf default
+  notify:
+    - restart apache (Debian)
+  when: ansible_distribution == "Debian"
+
+- name: Configure Apache - default config (CentOS)
+  template:
+    src: default.conf.tmpl
+    dest: /etc/httpd/conf.d/default.conf
+  notify:
+    - restart apache (CentOS)
+  when: ansible_distribution == "CentOS"
+
+- name: Configure Apache - subdomain config (CentOS)
+  template:
+    src: subdomain.conf.tmpl
+    dest: /etc/httpd/conf.d/{{ sfpg_subdomain_servername }}.conf
+  notify:
+    - restart apache (CentOS)
+  when:
+    - ansible_distribution == "CentOS"
+    - "{{ sfpg_use_subdomain }} == True"
+
+- name: Setup firewall (CentOS)
+  firewalld:
+    permanent: True
+    service: http
+    state: enabled
+  when: ansible_distribution == "CentOS" and ansible_distribution_major_version >= 7
+
+- name: Register sfpg_raspi_local to default False
+  set_fact:
+    sfpg_raspi_local: False
+
+- name: Register sfpg_raspi_local variable based on equality of webservers and raspi groups (True)
+  set_fact:
+    sfpg_raspi_local: True
+  when: "{{ hostvars[groups['webservers'][0]].ansible_eth0.ipv4.address == hostvars[groups['raspi'][0]].ansible_eth0.ipv4.address }}"
 
 - name: ensure /dev/sda1 is mounted at /var/www
   mount:
@@ -19,29 +75,95 @@
     opts: defaults,noatime
     dump: 0
     passno: 2
-  when: 
-    - "{{ sfpg_local }} == True"
-    - "{{ running_on_raspi }} == True"
+  when: "{{ sfpg_raspi_local }} == True"
 
-- name: create album dirs 
+- name: Set httpd owner/group (CentOS)
+  set_fact:
+    sfpg_owner: "{{ sfpg_owner_centos }}"
+    sfpg_group: "{{ sfpg_group_centos }}"
+  when: ansible_distribution == "CentOS"
+
+- name: Set httpd owner/group (Debian)
+  set_fact:
+    sfpg_owner: "{{ sfpg_owner_debian }}"
+    sfpg_group: "{{ sfpg_owner_debian }}"
+  when: ansible_distribution == "Debian"
+
+- name: Ensures {{ sfpg_default_documentroot }} dir exists
+  file:
+    path: "{{ sfpg_default_documentroot }}"
+    state: directory
+
+- name: Ensures {{ sfpg_subdomain_documentroot }} dir exists
   file: 
-    path: "{{ raspicam_default_dir }}/{{ raspicam_name }}"
-    state: directory 
-    owner: www-data 
-    group: www-data 
-  when: "{{ sfpg_local }} == True"
+    path: "{{ sfpg_subdomain_documentroot }}"
+    state: directory
+  when:
+    - "{{ sfpg_use_subdomain }} == True"
 
-- name: copy SFPG index.php into place (local Apache)
+- name: copy SFPG index.php into place (default documentroot)
   copy:
     src: index.php
-    dest: "{{ raspicam_default_dir }}"
-    owner: www-data
-    group: www-data
-  when: "{{ sfpg_local }} == True"
+    dest: "{{ sfpg_default_documentroot }}/index.php"
+    owner: "{{ sfpg_owner }}"
+    group: "{{ sfpg_group }}"
+  when:
+    -  "{{ sfpg_use_subdomain }} == False"
 
-- name: copy SFPG index.php into place (remote server)
+- name: create blank index.html in default documentroot
+  copy:
+    src: empty.html
+    dest: "{{ sfpg_default_documentroot }}/index.html"
+    owner: "{{ sfpg_owner }}"
+    group: "{{ sfpg_group }}"
+  when:
+    - "{{ sfpg_use_subdomain }} == True"
+
+- name: copy SFPG index.php into place (subdomain)
   copy:
     src: index.php
-    dest: "{{ raspicam_offsite_image_copy_ssh_login }}@{{ raspicam_offsite_image_copy_server_name }}:{{ raspicam_offsite_image_copy_document_root }}/"
-  when: "{{ sfpg_local }} == False"
+    dest: "{{ sfpg_subdomain_documentroot }}/index.php"
+    owner: "{{ sfpg_owner }}"
+    group: "{{ sfpg_group }}"
+  when:
+    - "{{ sfpg_use_subdomain }} == True"
 
+- name: Register sfpg_documentroot (default)
+  set_fact:
+    sfpg_documentroot: "{{ sfpg_default_documentroot }}"
+  when: "{{ sfpg_use_subdomain }} == False"
+
+- name: Register sfpg_documentroot (subdomain)
+  set_fact:
+    sfpg_documentroot: "{{ sfpg_subdomain_documentroot }}"
+  when: "{{ sfpg_use_subdomain }} == True"
+
+- name: Pre-register raspicam_default_dir
+  set_fact:
+    raspicam_default_dir: "{{ sfpg_local_cam_dir }}/"
+
+- name: Register raspicam_default_dir for default documentroot
+  set_fact:
+    raspicam_default_dir: "{{ sfpg_documentroot}}/{{ raspicam_name }}/"
+  when:
+    - "{{ sfpg_raspi_local }} == True"
+
+- name: create album dirs
+  file:
+    path: "{{ sfpg_documentroot }}/{{ raspicam_name }}"
+    state: directory
+    owner: "{{ sfpg_owner }}"
+    group: "{{ sfpg_group }}"
+
+- name: create album dirs _sfpg_data
+  file:
+    path: "{{ sfpg_documentroot }}/_sfpg_data/thumb/{{ raspicam_name }}"
+    state: directory
+    owner: "{{ sfpg_owner }}"
+    group: "{{ sfpg_group }}"
+
+# autodelete server side, client is handled by offsite image copy crontab
+- name: Set up cron for autodeletion of the images on server
+  template:
+    src: autodelete.tmpl
+    dest: /etc/cron.d/autodelete

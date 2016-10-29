@@ -1,3 +1,12 @@
 ---
-sfpg_local: True
-running_on_raspi: True
+sfpg_owner_centos: apache
+sfpg_group_centos: apache
+sfpg_owner_debian: www-data
+sfpg_group_debian: www-data
+sfpg_default_documentroot: /var/www/default/html/
+sfpg_default_servername: "{{ hostvars[groups['webservers'][0]].groups.webservers[0] }}"
+sfpg_use_subdomain: False
+sfpg_subdomain: cam
+sfpg_subdomain_servername: "{{ sfpg_subdomain }}.{{ sfpg_default_servername }}"
+sfpg_subdomain_documentroot: /var/www/{{ sfpg_subdomain_servername }}/html/
+sfpg_local_cam_dir: /run/cam/{{ raspicam_name }}
