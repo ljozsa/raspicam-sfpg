@@ -1,2 +1,2 @@
-0 0 * * * find {{ sfpg_documentroot }}_sfpg_data/ -mtime +1 -mindepth 3 -delete
-0 0 * * * find {{ sfpg_documentroot }} -mtime +1 -mindepth 2 ! -path "*/_sfpg_data/*" -delete
+0 0 * * * root /usr/bin/find {{ sfpg_documentroot }}_sfpg_data/ -mtime +1 -mindepth 3 -delete
+0 0 * * * root /usr/bin/find {{ sfpg_documentroot }} -mtime +1 -mindepth 2 ! -path "*/_sfpg_data/*" -delete

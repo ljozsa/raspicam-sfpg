@@ -8,6 +8,8 @@
   with_items:
     - apache2
     - libapache2-mod-php5
+    - rsync
+    - perl
   when: ansible_distribution == "Debian"
 
 - name: Install necessary packages (yum)
@@ -18,6 +20,8 @@
   with_items:
     - httpd
     - php
+    - rsync
+    - perl
   when: ansible_distribution == "CentOS"
 
 - name: Configure Apache - default config (Debian)
@@ -64,18 +68,7 @@
 - name: Register sfpg_raspi_local variable based on equality of webservers and raspi groups (True)
   set_fact:
     sfpg_raspi_local: True
-  when: "{{ hostvars[groups['webservers'][0]].ansible_eth0.ipv4.address == hostvars[groups['raspi'][0]].ansible_eth0.ipv4.address }}"
-
-- name: ensure /dev/sda1 is mounted at /var/www
-  mount:
-    name: /var/www
-    src: /dev/sda1
-    state: mounted
-    fstype: ext4
-    opts: defaults,noatime
-    dump: 0
-    passno: 2
-  when: "{{ sfpg_raspi_local }} == True"
+  when: "{{ hostvars[groups['webservers'][0]].ansible_default_ipv4.address == hostvars[groups['raspi'][0]].ansible_default_ipv4.address }}"
 
 - name: Set httpd owner/group (CentOS)
   set_fact:
@@ -88,6 +81,27 @@
     sfpg_owner: "{{ sfpg_owner_debian }}"
     sfpg_group: "{{ sfpg_owner_debian }}"
   when: ansible_distribution == "Debian"
+
+# add webadmin service user
+- name: Add service user
+  user:
+    createhome: True
+    group: "{{ sfpg_group }}"
+    home: "/home/webadmin"
+    name: webadmin
+    shell: /bin/bash
+    state: present
+
+- name: ensure /dev/sda1 is mounted at /var/www
+  mount:
+    name: /var/www
+    src: /dev/sda1
+    state: mounted
+    fstype: ext4
+    opts: defaults,noatime
+    dump: 0
+    passno: 2
+  when: "{{ sfpg_raspi_local }} == True"
 
 - name: Ensures {{ sfpg_default_documentroot }} dir exists
   file:
@@ -105,7 +119,7 @@
   copy:
     src: index.php
     dest: "{{ sfpg_default_documentroot }}/index.php"
-    owner: "{{ sfpg_owner }}"
+    owner: webadmin
     group: "{{ sfpg_group }}"
   when:
     -  "{{ sfpg_use_subdomain }} == False"
@@ -114,7 +128,7 @@
   copy:
     src: empty.html
     dest: "{{ sfpg_default_documentroot }}/index.html"
-    owner: "{{ sfpg_owner }}"
+    owner: webadmin
     group: "{{ sfpg_group }}"
   when:
     - "{{ sfpg_use_subdomain }} == True"
@@ -123,7 +137,7 @@
   copy:
     src: index.php
     dest: "{{ sfpg_subdomain_documentroot }}/index.php"
-    owner: "{{ sfpg_owner }}"
+    owner: webadmin
     group: "{{ sfpg_group }}"
   when:
     - "{{ sfpg_use_subdomain }} == True"
@@ -152,14 +166,14 @@
   file:
     path: "{{ sfpg_documentroot }}/{{ raspicam_name }}"
     state: directory
-    owner: "{{ sfpg_owner }}"
+    owner: webadmin
     group: "{{ sfpg_group }}"
 
 - name: create album dirs _sfpg_data
   file:
     path: "{{ sfpg_documentroot }}/_sfpg_data/thumb/{{ raspicam_name }}"
     state: directory
-    owner: "{{ sfpg_owner }}"
+    owner: webadmin
     group: "{{ sfpg_group }}"
 
 # autodelete server side, client is handled by offsite image copy crontab
@@ -167,3 +181,4 @@
   template:
     src: autodelete.tmpl
     dest: /etc/cron.d/autodelete
+
