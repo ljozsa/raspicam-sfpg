@@ -168,6 +168,7 @@
     state: directory
     owner: webadmin
     group: "{{ sfpg_group }}"
+    mode: 0775
 
 - name: create album dirs _sfpg_data
   file:
@@ -175,6 +176,7 @@
     state: directory
     owner: webadmin
     group: "{{ sfpg_group }}"
+    mode: 0775
 
 # autodelete server side, client is handled by offsite image copy crontab
 - name: Set up cron for autodeletion of the images on server
